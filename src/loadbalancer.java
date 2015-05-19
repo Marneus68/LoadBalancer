@@ -74,14 +74,15 @@ public class loadbalancer {
             Socket client = null, server = null;
             try {
                 client = ss.accept();
+                System.out.println("    Connection accepted, trying to reach " + w.ip + ":" + w.port);
                 final InputStream sfc = client.getInputStream();
                 final OutputStream stc = client.getOutputStream();
 
                 try {
                     server = new Socket(w.ip, Integer.valueOf(w.port));
                 } catch (Exception e) {
-                    System.err.println("Cannot connect to " + w.ip + ":" + w.port);
-                    continue;
+                    System.err.println("    Cannot connect to " + w.ip + ":" + w.port);
+                    //continue;
                 }
 
                 final InputStream sfs = server.getInputStream();
@@ -91,17 +92,17 @@ public class loadbalancer {
                     public void run() {
                         int bytesRead;
                         try {
-                            while ((bytesRead = sfs.read(request)) != -1) {
+                            while ((bytesRead = sfc.read(request)) != -1) {
                                 sts.write(request, 0, bytesRead);
                                 sts.flush();
                             }
                         } catch (Exception e) {
-                            System.err.println("Error...");
                         }
 
                         try {
                             sts.close();
                         } catch (Exception e) {
+                            System.err.println("Error socket out closing...");
                         }
                     }
                 };
@@ -115,7 +116,7 @@ public class loadbalancer {
                         stc.flush();
                     }
                 } catch (Exception e) {
-                    System.err.println("Error...");
+                    System.err.println("Error client...");
                 }
 
                 stc.close();
@@ -128,6 +129,7 @@ public class loadbalancer {
                     if (client != null)
                         client.close();
                 } catch (Exception e) {
+                    System.err.println("Error socket server/client...");
                 }
             }
         }
