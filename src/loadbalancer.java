@@ -1,7 +1,4 @@
-import java.io.FileInputStream;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.PrintWriter;
+import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.HashMap;
@@ -14,6 +11,7 @@ import java.util.Properties;
  */
 
 class Worker {
+    public Boolean valid = true;
     String ip;
     String port;
     public Worker() {}
@@ -33,6 +31,10 @@ public class loadbalancer {
     static Map<String, HashMap<String, String>> lbs = new HashMap<String, HashMap<String, String>>();
 
     public static void main(String [] args) throws Exception {
+        int port = PORT;
+
+        if (args.length > 0)
+            port = Integer.valueOf(args[0]);
 
         Properties props = new Properties();
         InputStream input = new FileInputStream("config.ini");
@@ -43,25 +45,15 @@ public class loadbalancer {
             if (keys[0].equals("worker")) {
                 if (!workers.containsKey(keys[1]))
                     workers.put(keys[1], new HashMap<String, String>());
-
-                if (keys[2].equals("port")) {
-                    workers.get(keys[1]).put("port", props.getProperty(key));
-                } else if (keys[2].equals("ip")) {
-                    workers.get(keys[1]).put("ip", props.getProperty(key));
-                }
+                workers.get(keys[1]).put(keys[2], props.getProperty(key));
             } else if (keys[0].equals("lb")) {
                 if (!lbs.containsKey(keys[1]))
                     lbs.put(keys[1], new HashMap<String, String>());
-
-                if (keys[2].equals("workers")) {
-                    lbs.get(keys[1]).put("workers", props.getProperty(key));
-                } else if (keys[2].equals("strategy")) {
-                    lbs.get(keys[1]).put("strategy", props.getProperty(key));
-                }
+                lbs.get(keys[1]).put(keys[2], props.getProperty(key));
             }
         }
 
-        System.out.println("LoadBalancer started.");
+        System.out.println("LoadBalancer started on port " + port);
         System.out.println("  " + workers.size() + " workers defined");
         System.out.println("  Loadbalancers configurations: " + lbs.size());
 
@@ -70,13 +62,28 @@ public class loadbalancer {
         byte[] reply = new byte[4096];
 
         while (true) {
-            Worker w = getNextWorker("0");
             Socket client = null, server = null;
             try {
                 client = ss.accept();
-                System.out.println("    Connection accepted, trying to reach " + w.ip + ":" + w.port);
                 final InputStream sfc = client.getInputStream();
                 final OutputStream stc = client.getOutputStream();
+
+                BufferedReader in = new BufferedReader(new InputStreamReader(sfc));
+                String domainName = "";
+                String line = null;
+
+                while ((line = in.readLine()) != null && !line.isEmpty()) {
+                    if (line.startsWith("Host: ")) {
+                        domainName = line.replace("Host: ", "").split(":")[0];
+                    }
+                }
+
+                Worker w = getNextWorker(domainName);
+                if (!w.valid)
+                    continue;
+
+                System.out.println(" -> Connection accepted, trying to reach " + w.ip + ":" + w.port);
+                System.out.println("    Domain name: " + domainName);
 
                 try {
                     server = new Socket(w.ip, Integer.valueOf(w.port));
@@ -96,14 +103,11 @@ public class loadbalancer {
                                 sts.write(request, 0, bytesRead);
                                 sts.flush();
                             }
-                        } catch (Exception e) {
-                        }
+                        } catch (Exception e) {}
 
                         try {
                             sts.close();
-                        } catch (Exception e) {
-                            System.err.println("Error socket out closing...");
-                        }
+                        } catch (Exception e) {}
                     }
                 };
 
@@ -115,9 +119,7 @@ public class loadbalancer {
                         stc.write(reply, 0, bytesRead);
                         stc.flush();
                     }
-                } catch (Exception e) {
-                    System.err.println("Error client...");
-                }
+                } catch (Exception e) {}
 
                 stc.close();
             } catch (Exception e) {
@@ -128,23 +130,39 @@ public class loadbalancer {
                         server.close();
                     if (client != null)
                         client.close();
-                } catch (Exception e) {
-                    System.err.println("Error socket server/client...");
-                }
+                } catch (Exception e) {}
             }
         }
     }
 
     static int counter = 0;
 
-    public static Worker getNextWorker(String lbstrategy) {
+    public static Worker getNextWorker(String domainName) throws Exception{
         Worker ret = new Worker();
-        String[] wrks = lbs.get(lbstrategy).get("workers").split(",");
-        String strategy = lbs.get(lbstrategy).get("strategy");
+        String[] wrks = {};
+        String strategy = "";
+        int found = 0;
+
+        for(Map.Entry<String, HashMap<String, String>> entry : lbs.entrySet()) {
+            if (entry.getValue().containsKey("domains")) {
+                if (entry.getValue().get("domains").contains(domainName)) {
+                    wrks = entry.getValue().get("workers").split(",");
+                    strategy = entry.getValue().get("strategy");
+                    found++;
+                }
+            }
+        }
+
+        if (found == 0) {
+            System.err.println(" -> domain " + domainName + " isn't handled by the LoadBalancer");
+            ret.valid = false;
+        }
 
         if (strategy.equals("round_robin")) {
             ret = new Worker(workers.get(String.valueOf(counter % wrks.length)).get("ip"), workers.get(String.valueOf(counter % wrks.length)).get("port"));
             counter++;
+        } else if (strategy.equals("sticky_session")) {
+
         }
         return ret;
     }
