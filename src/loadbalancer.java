@@ -1,9 +1,7 @@
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Properties;
+import java.util.*;
 
 /**
  * File created by duane
@@ -65,18 +63,20 @@ public class loadbalancer {
             Socket client = null, server = null;
             try {
                 client = ss.accept();
-                final InputStream sfc = client.getInputStream();
-                final OutputStream stc = client.getOutputStream();
-
-                BufferedReader in = new BufferedReader(new InputStreamReader(sfc));
+                final InputStream streamFromClient = client.getInputStream();
+                final OutputStream streamToClient = client.getOutputStream();
+                final BufferedReader in = new BufferedReader(new InputStreamReader(streamFromClient));
                 String domainName = "";
-                String line = null;
-
+                String line = "";
+                in.mark(1024);
                 while ((line = in.readLine()) != null && !line.isEmpty()) {
-                    if (line.startsWith("Host: ")) {
+                    System.out.println("readed line"+ line);
+                    if (String.valueOf(line).startsWith("Host: ")) {
                         domainName = line.replace("Host: ", "").split(":")[0];
+                        break;
                     }
                 }
+                in.reset();
 
                 Worker w = getNextWorker(domainName);
                 if (!w.valid)
@@ -89,42 +89,52 @@ public class loadbalancer {
                     server = new Socket(w.ip, Integer.valueOf(w.port));
                 } catch (Exception e) {
                     System.err.println("    Cannot connect to " + w.ip + ":" + w.port);
-                    //continue;
+                    continue;
                 }
 
-                final InputStream sfs = server.getInputStream();
-                final OutputStream sts = server.getOutputStream();
+                final InputStream streamFromServer = server.getInputStream();
+                final OutputStream streamToServer = server.getOutputStream();
 
                 Thread t = new Thread() {
                     public void run() {
-                        int bytesRead;
+                        int bytesRead = 0;
                         try {
-                            while ((bytesRead = sfc.read(request)) != -1) {
-                                sts.write(request, 0, bytesRead);
-                                sts.flush();
+                            while (in.ready()) {
+                                char[] readbuf = new char[1024];
+                                in.read(readbuf);
+                                System.out.println("stream from client " + bytesRead+" cahr read"+readbuf.length);
+                                streamToServer.write(new String(readbuf).getBytes(), 0, readbuf.length);
+                                streamToServer.flush();
                             }
-                        } catch (Exception e) {}
 
-                        try {
-                            sts.close();
-                        } catch (Exception e) {}
+                        } catch (Exception e) {
+                            System.out.println(" Exception server in stream "+ e.getMessage());
+                        }
+
                     }
                 };
 
                 t.start();
 
-                int bytesRead;
+                int bytesRead = 0;
                 try {
-                    while ((bytesRead = sfs.read(reply)) != -1) {
-                        stc.write(reply, 0, bytesRead);
-                        stc.flush();
+                    while ((bytesRead = streamFromServer.read(reply)) != -1) {
+                        streamToClient.write(reply, 0, bytesRead);
+                        streamToClient.flush();
                     }
-                } catch (Exception e) {}
 
-                stc.close();
+                    streamToServer.close();
+                } catch (Exception e) {
+
+                    System.out.println(" server in stream"+ e.getMessage());
+
+                }
+
+                streamToClient.close();
             } catch (Exception e) {
                 System.err.println(e);
-            } finally {
+            }
+            finally {
                 try {
                     if (server != null)
                         server.close();
@@ -132,6 +142,7 @@ public class loadbalancer {
                         client.close();
                 } catch (Exception e) {}
             }
+
         }
     }
 
