@@ -2,6 +2,7 @@ import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.*;
+import pools.esgi.com.Pool;
 
 /**
  * File created by duane
@@ -51,6 +52,7 @@ public class loadbalancer {
             }
         }
 
+        Pool threadPool  = new Pool(14);
         System.out.println("LoadBalancer started on port " + port);
         System.out.println("  " + workers.size() + " workers defined");
         System.out.println("  Loadbalancers configurations: " + lbs.size());
@@ -60,6 +62,7 @@ public class loadbalancer {
         byte[] reply = new byte[4096];
 
         while (true) {
+
             Socket client = null, server = null;
             try {
                 client = ss.accept();
@@ -69,6 +72,7 @@ public class loadbalancer {
                 String domainName = "";
                 String line = "";
                 in.mark(1024);
+
                 while ((line = in.readLine()) != null && !line.isEmpty()) {
                     System.out.println("readed line"+ line);
                     if (String.valueOf(line).startsWith("Host: ")) {
@@ -95,26 +99,8 @@ public class loadbalancer {
                 final InputStream streamFromServer = server.getInputStream();
                 final OutputStream streamToServer = server.getOutputStream();
 
-                Thread t = new Thread() {
-                    public void run() {
-                        int bytesRead = 0;
-                        try {
-                            while (in.ready()) {
-                                char[] readbuf = new char[1024];
-                                in.read(readbuf);
-                                System.out.println("stream from client " + bytesRead+" cahr read"+readbuf.length);
-                                streamToServer.write(new String(readbuf).getBytes(), 0, readbuf.length);
-                                streamToServer.flush();
-                            }
-
-                        } catch (Exception e) {
-                            System.out.println(" Exception server in stream "+ e.getMessage());
-                        }
-
-                    }
-                };
-
-                t.start();
+                RequestHandler requestThread = new RequestHandler(threadPool, server, client,in);
+                threadPool.addJob(requestThread);
 
                 int bytesRead = 0;
                 try {
