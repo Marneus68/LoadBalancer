@@ -52,7 +52,7 @@ public class loadbalancer {
             }
         }
 
-        Pool threadPool  = new Pool(14);
+        Pool threadPool  = new Pool(7);
         System.out.println("LoadBalancer started on port " + port);
         System.out.println("  " + workers.size() + " workers defined");
         System.out.println("  Loadbalancers configurations: " + lbs.size());
@@ -99,7 +99,7 @@ public class loadbalancer {
                 final InputStream streamFromServer = server.getInputStream();
                 final OutputStream streamToServer = server.getOutputStream();
 
-                RequestHandler requestThread = new RequestHandler(threadPool, server, client,in);
+                RequestHandler requestThread = new RequestHandler(server, client,in);
                 threadPool.addJob(requestThread);
 
                 int bytesRead = 0;

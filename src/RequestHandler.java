@@ -14,13 +14,11 @@ public class RequestHandler implements Runnable {
     Socket server = null;
     Socket client = null;
     BufferedReader pushBackedHeaderStream = null;
-    IPool pool = null;
 
-    public RequestHandler(IPool threadPool, Socket serverSocket, Socket clientSocket, BufferedReader clientStreamReader){
+    public RequestHandler(Socket serverSocket, Socket clientSocket, BufferedReader clientStreamReader){
         server = serverSocket;
         client = clientSocket;
         pushBackedHeaderStream = clientStreamReader;
-        pool = threadPool;
     }
 
     @Override
